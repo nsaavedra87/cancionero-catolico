@@ -52,9 +52,10 @@ def transportar_nota(nota, semitonos):
             return lista[idx]
     return nota
 
-def procesar_texto_estricto(texto, semitonos):
+def procesar_texto_estricto(texto, semitonos, color_acorde):
     if not texto: return ""
-    # Patrón que protege la letra (solo detecta acordes rodeados de espacios)
+    
+    # Patrón: Solo detecta acordes si están aislados por espacios o bordes
     patron = r"(^|(?<=\s))(Do#?|Re#?|Mi|Fa#?|Sol#?|La#?|Si|[A-G][#b]?)([Mm]|maj7|maj|7|9|sus4|sus2|dim|aug|add9)?(?=\s|$)"
     
     def reemplazar(match):
@@ -68,8 +69,8 @@ def procesar_texto_estricto(texto, semitonos):
         nueva_nota = transportar_nota(nota_raiz_busqueda, semitonos)
         acorde_final = nueva_nota + modo
         
-        # Marcamos el acorde con una clase CSS especial
-        return f'{prefijo}<span class="chord-mark">{acorde_final}</span>'
+        # SOLUCIÓN DE FUERZA BRUTA: font color + b
+        return f'{prefijo}<b><font color="{color_acorde}">{acorde_final}</font></b>'
     
     lineas_procesadas = []
     for linea in texto.split('\n'):
@@ -87,37 +88,23 @@ st.set_page_config(page_title="ChordMaster Pro", layout="wide")
 if 'setlist' not in st.session_state:
     st.session_state.setlist = cargar_setlist()
 
-# --- SIDEBAR (SELECTORES DE COLOR) ---
-st.sidebar.title("🎸 Ajustes Visuales")
-c_bg = st.sidebar.color_picker("Color de Fondo", "#FFFFFF")
-c_txt = st.sidebar.color_picker("Color de Letra", "#000000")
-c_chord = st.sidebar.color_picker("Color de Acordes", "#FF0000")
-f_size = st.sidebar.slider("Tamaño de Letra", 12, 45, 19)
+# Sidebar: Ajustes de Color
+st.sidebar.title("🎸 Ajustes")
+c_bg = st.sidebar.color_picker("Fondo Visor", "#FFFFFF")
+c_txt = st.sidebar.color_picker("Color Letra", "#000000")
+c_chord = st.sidebar.color_picker("Color Acordes", "#FF0000")
+f_size = st.sidebar.slider("Tamaño Fuente", 12, 45, 19)
 
-# --- INYECCIÓN DE CSS DINÁMICO (Esto soluciona el problema definitivamente) ---
+# Estilo Base
 st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono&display=swap');
-    
-    /* Contenedor del Visor */
     .visor-musical {{ 
         background-color: {c_bg} !important; 
         color: {c_txt} !important; 
-        border-radius: 12px; 
-        padding: 25px; 
-        border: 1px solid #ddd;
+        border-radius: 12px; padding: 25px; border: 1px solid #ddd;
         font-family: 'JetBrains Mono', monospace !important; 
-        line-height: 1.2; 
-        font-size: {f_size}px;
-        overflow-x: auto;
-    }}
-    
-    /* REGLA MAESTRA PARA LOS ACORDES */
-    .chord-mark {{ 
-        color: {c_chord} !important; 
-        font-weight: bold !important;
-        font-style: normal !important;
-        display: inline-block;
+        line-height: 1.2; font-size: {f_size}px;
     }}
     </style>
     """, unsafe_allow_html=True)
@@ -127,7 +114,6 @@ categorias = cargar_categorias()
 
 menu = st.sidebar.selectbox("Ir a:", ["🏠 Cantar / Vivo", "📋 Mi Setlist", "➕ Agregar Canción", "📂 Gestionar / Editar", "⚙️ Categorías"])
 
-# --- LÓGICA DE MÓDULOS ---
 if menu == "🏠 Cantar / Vivo":
     st.header("🏠 Biblioteca en Vivo")
     col_f1, col_f2 = st.columns([2, 1])
@@ -149,71 +135,48 @@ if menu == "🏠 Cantar / Vivo":
             if sel_c not in st.session_state.setlist:
                 st.session_state.setlist.append(sel_c)
                 guardar_setlist(st.session_state.setlist)
-                st.toast(f"'{sel_c}' añadida")
+                st.toast("Añadida")
 
         tp = st.number_input("Transportar (Semitonos)", -6, 6, 0)
-        final_html = procesar_texto_estricto(data['Letra'], tp)
+        final_html = procesar_texto_estricto(data['Letra'], tp, c_chord)
         
-        st.markdown(f'''
-            <div class="visor-musical">
-                <div style="font-size:1.2em; font-weight:bold;">{data["Título"]}</div>
-                <div style="color:gray; font-style:italic; font-size:0.8em;">{data["Autor"]} | {data["Categoría"]}</div>
-                <hr style="border-color:#eee; margin:10px 0;">
-                {final_html}
-            </div>
-        ''', unsafe_allow_html=True)
+        st.markdown(f'''<div class="visor-musical"><b>{data["Título"]}</b><br><small>{data["Autor"]}</small><hr>{final_html}</div>''', unsafe_allow_html=True)
 
 elif menu == "📋 Mi Setlist":
-    st.header("📋 Mi Setlist Guardado")
+    st.header("📋 Mi Setlist")
     if not st.session_state.setlist:
-        st.info("Tu setlist está vacío.")
+        st.info("Vacío.")
     else:
-        for i, cancion_nombre in enumerate(st.session_state.setlist):
+        for i, t in enumerate(st.session_state.setlist):
             col_t, col_b = st.columns([4, 1])
-            col_t.subheader(f"{i+1}. {cancion_nombre}")
-            if col_b.button("❌ Quitar", key=f"del_set_{i}"):
+            col_t.write(f"**{i+1}. {t}**")
+            if col_b.button("❌", key=f"del_{i}"):
                 st.session_state.setlist.pop(i)
                 guardar_setlist(st.session_state.setlist)
                 st.rerun()
-        if st.button("🗑️ Vaciar Setlist"):
-            st.session_state.setlist = []
-            guardar_setlist([])
-            st.rerun()
+        if st.button("🗑️ Vaciar"):
+            st.session_state.setlist = []; guardar_setlist([]); st.rerun()
 
 elif menu == "➕ Agregar Canción":
-    st.header("➕ Nueva Canción")
-    col1, col2, col3 = st.columns(3)
-    titulo_n = col1.text_input("Título")
-    autor_n = col2.text_input("Autor")
-    cat_n = col3.selectbox("Categoría", categorias)
-    letra_n = st.text_area("Letra:", height=400)
-    if letra_n:
-        preview = procesar_texto_estricto(letra_n, 0)
-        st.markdown(f'<div class="visor-musical">{preview}</div>', unsafe_allow_html=True)
-        if st.button("💾 Guardar"):
-            nueva = pd.DataFrame([[titulo_n, autor_n if autor_n else "Anónimo", cat_n, letra_n]], columns=df.columns)
-            df = pd.concat([df, nueva], ignore_index=True)
-            guardar_datos(df); st.success("¡Guardada!"); st.rerun()
+    st.header("➕ Nueva")
+    c1, c2, c3 = st.columns(3)
+    t_n, a_n, cat_n = c1.text_input("Título"), c2.text_input("Autor"), c3.selectbox("Categoría", categorias)
+    l_n = st.text_area("Letra:", height=300)
+    if st.button("💾 Guardar"):
+        nueva = pd.DataFrame([[t_n, a_n if a_n else "Anónimo", cat_n, l_n]], columns=df.columns)
+        df = pd.concat([df, nueva], ignore_index=True)
+        guardar_datos(df); st.success("Guardada"); st.rerun()
 
 elif menu == "📂 Gestionar / Editar":
-    st.header("📂 Gestión")
     for i, row in df.iterrows():
         with st.expander(f"📝 {row['Título']}"):
-            c1, c2, c3 = st.columns(3)
-            nt = c1.text_input("Título", row['Título'], key=f"t{i}")
-            na = c2.text_input("Autor", row['Autor'], key=f"a{i}")
-            nc = c3.selectbox("Categoría", categorias, index=categorias.index(row['Categoría']) if row['Categoría'] in categorias else 0, key=f"c{i}")
+            nt = st.text_input("Título", row['Título'], key=f"t{i}")
             nl = st.text_area("Letra", row['Letra'], height=200, key=f"l{i}")
             if st.button("Actualizar", key=f"b{i}"):
-                df.at[i, 'Título'], df.at[i, 'Autor'], df.at[i, 'Categoría'], df.at[i, 'Letra'] = nt, na, nc, nl
+                df.at[i, 'Título'], df.at[i, 'Letra'] = nt, nl
                 guardar_datos(df); st.rerun()
-            if st.button("Eliminar", key=f"d{i}"):
-                df = df.drop(i).reset_index(drop=True); guardar_datos(df); st.rerun()
 
 elif menu == "⚙️ Categorías":
-    st.header("⚙️ Categorías")
     n_cat = st.text_input("Nueva:")
     if st.button("Añadir"):
-        if n_cat and n_cat not in categorias:
-            categorias.append(n_cat); guardar_categorias(categorias); st.rerun()
-    st.write(categorias)
+        categorias.append(n_cat); guardar_categorias(categorias); st.rerun()
