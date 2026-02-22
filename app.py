@@ -6,6 +6,7 @@ import re
 # --- CONFIGURACIÓN DE ARCHIVOS ---
 DB_FILE = "cancionero.csv"
 CAT_FILE = "categorias.csv"
+SETLIST_FILE = "setlist.csv" # Nuevo archivo para persistencia
 
 # --- FUNCIONES DE DATOS ---
 def cargar_datos():
@@ -24,13 +25,24 @@ def cargar_categorias():
     except Exception: pass
     return cat_emergencia
 
+def cargar_setlist():
+    try:
+        if os.path.exists(SETLIST_FILE) and os.path.getsize(SETLIST_FILE) > 0:
+            df_sl = pd.read_csv(SETLIST_FILE)
+            return df_sl["Título"].tolist()
+    except Exception: pass
+    return []
+
 def guardar_datos(df):
     df.to_csv(DB_FILE, index=False)
 
 def guardar_categorias(lista_cat):
     pd.DataFrame(lista_cat, columns=["Nombre"]).to_csv(CAT_FILE, index=False)
 
-# --- LÓGICA DE TRANSPOSICIÓN ---
+def guardar_setlist(lista_sl):
+    pd.DataFrame(lista_sl, columns=["Título"]).to_csv(SETLIST_FILE, index=False)
+
+# --- LÓGICA DE TRANSPOSICIÓN Y COLOR (CORREGIDA) ---
 NOTAS_AMER = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 NOTAS_LAT = ["Do", "Do#", "Re", "Re#", "Mi", "Fa", "Fa#", "Sol", "Sol#", "La", "La#", "Si"]
 
@@ -46,12 +58,11 @@ def transportar_nota(nota, semitonos):
 def procesar_texto_estricto(texto, semitonos, color_acorde):
     if not texto: return ""
     
-    # PATRÓN MEJORADO: Solo reconoce acordes si están seguidos de un espacio o fin de palabra
-    # y precedidos por inicio de línea o espacios. Esto evita confundir letras de palabras.
+    # PATRÓN: Reconoce acordes solo si están aislados (espacios o bordes)
     patron = r"(^|(?<=\s))(Do#?|Re#?|Mi|Fa#?|Sol#?|La#?|Si|[A-G][#b]?)([Mm]|maj7|maj|7|9|sus4|sus2|dim|aug|add9)?(?=\s|$)"
     
     def reemplazar(match):
-        prefijo = match.group(1) # El espacio o inicio previo
+        prefijo = match.group(1) 
         nota_raiz = match.group(2)
         modo = match.group(3) if match.group(3) else ""
         
@@ -61,26 +72,27 @@ def procesar_texto_estricto(texto, semitonos, color_acorde):
         nueva_nota = transportar_nota(nota_raiz_busqueda, semitonos) if semitonos != 0 else nota_raiz
         acorde_final = nueva_nota + modo
         
-        return f'{prefijo}<span style="color:{color_acorde}; font-weight:bold;">{acorde_final}</span>'
+        # EL CAMBIO: Usamos 'color' con !important y etiquetas <b> para asegurar el renderizado
+        return f'{prefijo}<b style="color:{color_acorde} !important;">{acorde_final}</b>'
     
     lineas = texto.split('\n')
     lineas_procesadas = []
     for linea in lineas:
         if not linea.strip():
-            lineas_processed = "&nbsp;"
+            linea_out = "&nbsp;"
         else:
             linea_html = re.sub(patron, reemplazar, linea)
-            lineas_processed = linea_html.replace(" ", "&nbsp;")
-        lineas_procesadas.append(lineas_processed)
+            linea_out = linea_html.replace(" ", "&nbsp;")
+        lineas_procesadas.append(linea_out)
         
     return "<br>".join(lineas_procesadas)
 
 # --- INTERFAZ STREAMLIT ---
 st.set_page_config(page_title="ChordMaster Pro", layout="wide")
 
-# Inicializar Setlist en la sesión si no existe
+# Cargar Setlist persistente al inicio
 if 'setlist' not in st.session_state:
-    st.session_state.setlist = []
+    st.session_state.setlist = cargar_setlist()
 
 st.markdown("""
     <style>
@@ -88,6 +100,8 @@ st.markdown("""
     textarea { font-family: 'JetBrains Mono', monospace !important; font-size: 16px !important; line-height: 1.2 !important; background-color: #000 !important; color: #ddd !important; }
     .visor-musical { border-radius: 12px; padding: 25px; background-color: #121212; border: 1px solid #444; font-family: 'JetBrains Mono', monospace !important; line-height: 1.2; overflow-x: auto; color: white; }
     .meta-data { color: #888; font-style: italic; margin-bottom: 5px; font-size: 0.9em; }
+    /* Forzar el color de los elementos b dentro del visor */
+    .visor-musical b { display: inline-block; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -124,30 +138,31 @@ if menu == "🏠 Cantar / Vivo":
         if col_btn.button("➕ Añadir a Setlist", use_container_width=True):
             if sel_c not in st.session_state.setlist:
                 st.session_state.setlist.append(sel_c)
-                st.toast(f"'{sel_c}' añadida al setlist")
+                guardar_setlist(st.session_state.setlist) # Guardar en archivo
+                st.toast(f"'{sel_c}' añadida")
 
         tp = st.number_input("Transportar (Semitonos)", -6, 6, 0)
         final_html = procesar_texto_estricto(data['Letra'], tp, c_chord)
         
         st.markdown(f'<div class="visor-musical" style="background:{c_bg}; color:{c_txt}; font-size:{f_size}px;"><div style="font-size:1.2em; font-weight:bold;">{data["Título"]}</div><div class="meta-data">{data["Autor"]} | {data["Categoría"]}</div><hr style="border-color:#333;">{final_html}</div>', unsafe_allow_html=True)
-    else:
-        st.info("No se encontraron canciones.")
 
-# --- MÓDULO: SETLIST ---
+# --- MÓDULO: MI SETLIST ---
 elif menu == "📋 Mi Setlist":
-    st.header("📋 Setlist Seleccionado")
+    st.header("📋 Mi Setlist Guardado")
     if not st.session_state.setlist:
-        st.info("Tu setlist está vacío. Añade canciones desde la biblioteca.")
+        st.info("No hay canciones en el setlist.")
     else:
         for i, cancion_nombre in enumerate(st.session_state.setlist):
             col_t, col_b = st.columns([4, 1])
-            col_t.subheader(f"{i+1}. {cancion_nombre}")
+            col_t.write(f"**{i+1}. {cancion_nombre}**")
             if col_b.button("❌ Quitar", key=f"del_set_{i}"):
                 st.session_state.setlist.pop(i)
+                guardar_setlist(st.session_state.setlist)
                 st.rerun()
         
-        if st.button("🗑️ Limpiar Todo el Setlist"):
+        if st.button("🗑️ Vaciar Setlist"):
             st.session_state.setlist = []
+            guardar_setlist([])
             st.rerun()
 
 # --- MÓDULO: AGREGAR ---
@@ -157,7 +172,7 @@ elif menu == "➕ Agregar Canción":
     titulo_n = col1.text_input("Título")
     autor_n = col2.text_input("Autor")
     cat_n = col3.selectbox("Categoría", categorias)
-    letra_n = st.text_area("Editor:", height=400, placeholder="C       G\nAleluya, Aleluya")
+    letra_n = st.text_area("Editor:", height=400)
     
     if letra_n:
         preview = procesar_texto_estricto(letra_n, 0, c_chord)
