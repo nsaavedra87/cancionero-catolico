@@ -55,19 +55,22 @@ def transportar_nota(nota, semitonos):
 def procesar_texto_definitivo(texto, semitonos):
     if not texto: return ""
     
-    # ESTA ES LA CLAVE: Un patrón que captura TODO el acorde de una vez
-    # Captura: (Nota)(# o b)(m, M, maj7, etc.)
-    patron_acorde = r"\b(Do#?|Re#?|Mi|Fa#?|Sol#?|La#?|Si|[A-G][#b]?)(m|M|maj7|7|9|sus4|add9|dim|aug)?\b"
+    # NUEVO PATRÓN: Captura la nota y TODO lo que le siga que sea musical (#, b, m, M, números, etc.)
+    # La parte ([#b]?m?[M]?\d?maj?\d?|sus\d?|add\d?|dim|aug)? es mucho más amplia ahora.
+    patron_acorde = r"\b(Do#?|Re#?|Mi|Fa#?|Sol#?|La#?|Si|[A-G][#b]?)([#b]?m?M?maj?\d?|7|9|sus\d?|add\d?|dim|aug)*\b"
     
     def transformar(match):
-        acorde_completo = match.group(0) # El texto completo (ej: "Fa#m7")
-        nota_raiz = match.group(1)       # Solo la raíz (ej: "Fa#")
-        extension = match.group(2) if match.group(2) else ""
+        # Tomamos el grupo completo capturado por la expresión regular
+        acorde_completo = match.group(0) 
         
         if semitonos == 0:
             return f"<b>{acorde_completo}</b>"
         
-        # Si hay transposición, transportamos solo la raíz y pegamos la extensión
+        # Para transponer, necesitamos separar la raíz de la extensión
+        nota_raiz = match.group(1)
+        # La extensión es todo lo que queda del acorde completo después de quitar la raíz
+        extension = acorde_completo[len(nota_raiz):]
+        
         dic_bemoles = {"Db": "C#", "Eb": "D#", "Gb": "F#", "Ab": "G#", "Bb": "A#"}
         nota_busqueda = dic_bemoles.get(nota_raiz, nota_raiz)
         nueva_raiz = transportar_nota(nota_busqueda, semitonos)
@@ -80,17 +83,16 @@ def procesar_texto_definitivo(texto, semitonos):
             lineas_procesadas.append("&nbsp;")
             continue
             
-        # Filtro de seguridad para no confundir letra con acordes (basado en espacios)
-        es_linea_acordes = (linea.count(" ") / len(linea)) > 0.25 if len(linea) > 8 else True
+        # Decidimos si la línea es de acordes o de letra
+        palabras = linea.split()
+        es_linea_acordes = (linea.count(" ") / len(linea)) > 0.20 if len(linea) > 5 else True
         
         if es_linea_acordes:
-            # En líneas de acordes, marcamos todo lo que parezca nota
             l = re.sub(patron_acorde, transformar, linea)
         else:
-            # En líneas de letra, solo marcamos si tiene extensiones (ej: Do#m) 
-            # para evitar que el "¿A donde...?" o el "Si" de la frase se pongan negrita
-            patron_solo_complejos = r"\b(Do#?|Re#?|Mi|Fa#?|Sol#?|La#?|Si|[A-G][#b]?)(m|M|maj7|7|9|sus4|add9|dim|aug)+\b"
-            l = re.sub(patron_solo_complejos, transformar, linea)
+            # En líneas de letra, solo marcamos si el acorde es "obviamente" un acorde (más de 2 letras o tiene #/m/7)
+            patron_letra = r"\b(Do#?|Re#?|Mi|Fa#?|Sol#?|La#?|Si|[A-G][#b]?)([#b]?m|M|maj|7|9|sus|add|dim|aug)+\d?\b"
+            l = re.sub(patron_letra, transformar, linea)
             
         lineas_procesadas.append(l.replace(" ", "&nbsp;"))
         
@@ -102,7 +104,7 @@ st.set_page_config(page_title="ChordMaster Pro", layout="wide")
 if 'setlist' not in st.session_state:
     st.session_state.setlist = cargar_setlist()
 
-# Sidebar: Menú arriba
+# Sidebar
 st.sidebar.title("🎸 Menú")
 menu = st.sidebar.selectbox("Ir a:", ["🏠 Cantar / Vivo", "📋 Mi Setlist", "➕ Agregar Canción", "📂 Gestionar / Editar", "⚙️ Categorías"])
 
@@ -120,9 +122,14 @@ st.markdown(f"""
         color: {c_txt} !important; 
         border-radius: 12px; padding: 30px; border: 1px solid #ddd;
         font-family: 'JetBrains Mono', monospace !important; 
-        line-height: 1.4; font-size: {f_size}px;
+        line-height: 1.5; font-size: {f_size}px;
     }}
-    .visor-musical b {{ font-weight: 900 !important; color: inherit; }}
+    /* Forzamos que la negrita sea muy gruesa */
+    .visor-musical b {{ 
+        font-weight: 800 !important; 
+        color: inherit;
+        display: inline-block; /* Evita que se rompa el bloque del acorde */
+    }}
     </style>
     """, unsafe_allow_html=True)
 
