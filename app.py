@@ -52,51 +52,52 @@ def transportar_nota(nota, semitonos):
             return lista[idx]
     return nota
 
-def procesar_texto_definitivo(texto, semitonos):
-    if not texto: return ""
+def procesar_palabra_acorde(palabra, semitonos):
+    # Patrón para identificar la raíz del acorde al inicio de la palabra
+    patron_raiz = r"^(Do#?|Re#?|Mi|Fa#?|Sol#?|La#?|Si|[A-G][#b]?)"
+    match = re.search(patron_raiz, palabra)
     
-    # NUEVO PATRÓN: Captura la nota y TODO lo que le siga que sea musical (#, b, m, M, números, etc.)
-    # La parte ([#b]?m?[M]?\d?maj?\d?|sus\d?|add\d?|dim|aug)? es mucho más amplia ahora.
-    patron_acorde = r"\b(Do#?|Re#?|Mi|Fa#?|Sol#?|La#?|Si|[A-G][#b]?)([#b]?m?M?maj?\d?|7|9|sus\d?|add\d?|dim|aug)*\b"
-    
-    def transformar(match):
-        # Tomamos el grupo completo capturado por la expresión regular
-        acorde_completo = match.group(0) 
+    if match:
+        raiz = match.group(1)
+        extension = palabra[len(raiz):]
         
         if semitonos == 0:
-            return f"<b>{acorde_completo}</b>"
+            return f"<b>{palabra}</b>"
         
-        # Para transponer, necesitamos separar la raíz de la extensión
-        nota_raiz = match.group(1)
-        # La extensión es todo lo que queda del acorde completo después de quitar la raíz
-        extension = acorde_completo[len(nota_raiz):]
-        
+        # Lógica de transposición
         dic_bemoles = {"Db": "C#", "Eb": "D#", "Gb": "F#", "Ab": "G#", "Bb": "A#"}
-        nota_busqueda = dic_bemoles.get(nota_raiz, nota_raiz)
+        nota_busqueda = dic_bemoles.get(raiz, raiz)
         nueva_raiz = transportar_nota(nota_busqueda, semitonos)
-        
         return f"<b>{nueva_raiz}{extension}</b>"
+    
+    return palabra
 
-    lineas_procesadas = []
-    for linea in texto.split('\n'):
-        if not linea.strip():
-            lineas_procesadas.append("&nbsp;")
+def procesar_linea_inteligente(linea, semitonos):
+    if not linea.strip():
+        return "&nbsp;"
+    
+    # Si la línea tiene muchos espacios, es una línea de acordes
+    es_linea_acordes = (linea.count(" ") / len(linea)) > 0.15 if len(linea) > 5 else True
+    
+    palabras = linea.split(" ")
+    nueva_linea = []
+    
+    for p in palabras:
+        if not p:
+            nueva_linea.append("")
             continue
-            
-        # Decidimos si la línea es de acordes o de letra
-        palabras = linea.split()
-        es_linea_acordes = (linea.count(" ") / len(linea)) > 0.20 if len(linea) > 5 else True
         
+        # Si es línea de acordes, procesamos todo
         if es_linea_acordes:
-            l = re.sub(patron_acorde, transformar, linea)
+            nueva_linea.append(procesar_palabra_acorde(p, semitonos))
         else:
-            # En líneas de letra, solo marcamos si el acorde es "obviamente" un acorde (más de 2 letras o tiene #/m/7)
-            patron_letra = r"\b(Do#?|Re#?|Mi|Fa#?|Sol#?|La#?|Si|[A-G][#b]?)([#b]?m|M|maj|7|9|sus|add|dim|aug)+\d?\b"
-            l = re.sub(patron_letra, transformar, linea)
-            
-        lineas_procesadas.append(l.replace(" ", "&nbsp;"))
-        
-    return "<br>".join(lineas_procesadas)
+            # Si es línea de letra, solo procesamos si parece un acorde complejo (tiene #, m, o números)
+            if any(c in p for c in ["#", "m", "7", "9", "maj", "sus"]):
+                nueva_linea.append(procesar_palabra_acorde(p, semitonos))
+            else:
+                nueva_linea.append(p)
+                
+    return " ".join(nueva_linea).replace(" ", "&nbsp;")
 
 # --- INTERFAZ STREAMLIT ---
 st.set_page_config(page_title="ChordMaster Pro", layout="wide")
@@ -104,7 +105,7 @@ st.set_page_config(page_title="ChordMaster Pro", layout="wide")
 if 'setlist' not in st.session_state:
     st.session_state.setlist = cargar_setlist()
 
-# Sidebar
+# SIDEBAR REORDENADA
 st.sidebar.title("🎸 Menú")
 menu = st.sidebar.selectbox("Ir a:", ["🏠 Cantar / Vivo", "📋 Mi Setlist", "➕ Agregar Canción", "📂 Gestionar / Editar", "⚙️ Categorías"])
 
@@ -122,13 +123,11 @@ st.markdown(f"""
         color: {c_txt} !important; 
         border-radius: 12px; padding: 30px; border: 1px solid #ddd;
         font-family: 'JetBrains Mono', monospace !important; 
-        line-height: 1.5; font-size: {f_size}px;
+        line-height: 1.6; font-size: {f_size}px;
     }}
-    /* Forzamos que la negrita sea muy gruesa */
     .visor-musical b {{ 
-        font-weight: 800 !important; 
-        color: inherit;
-        display: inline-block; /* Evita que se rompa el bloque del acorde */
+        font-weight: 900 !important; 
+        color: inherit; 
     }}
     </style>
     """, unsafe_allow_html=True)
@@ -136,10 +135,9 @@ st.markdown(f"""
 df = cargar_datos()
 categorias = cargar_categorias()
 
-# --- MÓDULOS ---
 if menu == "🏠 Cantar / Vivo":
     col_f1, col_f2 = st.columns([2, 1])
-    with col_f1: busqueda = st.text_input("🔍 Buscar canción...")
+    with col_f1: busqueda = st.text_input("🔍 Buscar...")
     with col_f2: filtro_cat = st.selectbox("📂 Categoría", ["Todas"] + categorias)
     
     df_v = df.copy()
@@ -160,9 +158,13 @@ if menu == "🏠 Cantar / Vivo":
                 st.toast("Añadida")
 
         tp = st.number_input("Transportar", -6, 6, 0)
-        final_html = procesar_texto_definitivo(data['Letra'], tp)
-        st.markdown(f'<div class="visor-musical"><b>{data["Título"]}</b><br><small>{data["Autor"]}</small><hr>{final_html}</div>', unsafe_allow_html=True)
+        
+        lineas = data['Letra'].split('\n')
+        html_final = "<br>".join([procesar_linea_inteligente(l, tp) for l in lineas])
+        
+        st.markdown(f'<div class="visor-musical"><b>{data["Título"]}</b><br><small>{data["Autor"]}</small><hr>{html_final}</div>', unsafe_allow_html=True)
 
+# (Módulos de Setlist, Agregar y Editar se mantienen igual que en la versión anterior)
 elif menu == "📋 Mi Setlist":
     st.header("📋 Mi Setlist")
     for i, t in enumerate(st.session_state.setlist):
@@ -172,6 +174,8 @@ elif menu == "📋 Mi Setlist":
             st.session_state.setlist.pop(i)
             guardar_setlist(st.session_state.setlist)
             st.rerun()
+    if st.button("🗑️ Vaciar"):
+        st.session_state.setlist = []; guardar_setlist([]); st.rerun()
 
 elif menu == "➕ Agregar Canción":
     st.header("➕ Nueva")
