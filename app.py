@@ -3,12 +3,12 @@ import pandas as pd
 import os
 import re
 
-# --- CONFIGURACIÓN DE ARCHIVOS (MANTENIDO IGUAL) ---
+# --- CONFIGURACIÓN DE ARCHIVOS ---
 DB_FILE = "cancionero.csv"
 CAT_FILE = "categorias.csv"
 SETLIST_FILE = "setlist_fijo.csv"
 
-# --- FUNCIONES DE DATOS (MANTENIDO IGUAL) ---
+# --- FUNCIONES DE DATOS ---
 def cargar_datos():
     try:
         if os.path.exists(DB_FILE) and os.path.getsize(DB_FILE) > 0:
@@ -41,7 +41,7 @@ def guardar_categorias(lista_cat):
 def guardar_setlist(lista_sl):
     pd.DataFrame(lista_sl, columns=["Título"]).to_csv(SETLIST_FILE, index=False)
 
-# --- LÓGICA DE TRANSPOSICIÓN (MANTENIDO IGUAL) ---
+# --- LÓGICA DE TRANSPOSICIÓN ---
 NOTAS_AMER = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 NOTAS_LAT = ["Do", "Do#", "Re", "Re#", "Mi", "Fa", "Fa#", "Sol", "Sol#", "La", "La#", "Si"]
 
@@ -55,8 +55,11 @@ def transportar_nota(nota, semitonos):
 def procesar_texto_estricto(texto, semitonos):
     if not texto: return ""
     
-    # Patrón que protege la letra normal
-    patron = r"(^|(?<=\s))(Do#?|Re#?|Mi|Fa#?|Sol#?|La#?|Si|[A-G][#b]?)([Mm]|maj7|maj|7|9|sus4|sus2|dim|aug|add9)?(?=\s|$)"
+    # NUEVO PATRÓN ULTRA-ESTRICTO:
+    # Solo reconoce el acorde si está precedido y seguido por 2 o más espacios,
+    # o si es el inicio/fin de la línea y está aislado.
+    # Esto evita capturar la "A" o "Re" dentro de palabras de la letra.
+    patron = r"(^|(?<=\s\s))(Do#?|Re#?|Mi|Fa#?|Sol#?|La#?|Si|[A-G][#b]?)([Mm]|maj7|maj|7|9|sus4|sus2|dim|aug|add9)?(?=\s\s|$)"
     
     def reemplazar(match):
         prefijo = match.group(1) 
@@ -69,7 +72,6 @@ def procesar_texto_estricto(texto, semitonos):
         nueva_nota = transportar_nota(nota_raiz_busqueda, semitonos)
         acorde_final = nueva_nota + modo
         
-        # RESALTADO: Solo negrita para evitar errores de color
         return f'{prefijo}<b>{acorde_final}</b>'
     
     lineas_procesadas = []
@@ -77,6 +79,7 @@ def procesar_texto_estricto(texto, semitonos):
         if not linea.strip():
             lineas_procesadas.append("&nbsp;")
         else:
+            # Procesamos la línea con el patrón estricto
             linea_html = re.sub(patron, reemplazar, linea)
             lineas_procesadas.append(linea_html.replace(" ", "&nbsp;"))
         
@@ -88,21 +91,20 @@ st.set_page_config(page_title="ChordMaster Pro", layout="wide")
 if 'setlist' not in st.session_state:
     st.session_state.setlist = cargar_setlist()
 
-# --- SIDEBAR: REORDENADO SEGÚN TU SOLICITUD ---
+# --- SIDEBAR ---
 st.sidebar.title("🎸 ChordMaster Pro")
 
-# 1. EL MENÚ VA PRIMERO
+# Menú superior
 menu = st.sidebar.selectbox("Ir a:", ["🏠 Cantar / Vivo", "📋 Mi Setlist", "➕ Agregar Canción", "📂 Gestionar / Editar", "⚙️ Configurar Categorías"])
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🎨 Ajustes Visuales")
 
-# 2. LOS COLORES VAN DESPUÉS (Se eliminó el color de acordes)
 c_bg = st.sidebar.color_picker("Color de Fondo", "#FFFFFF")
 c_txt = st.sidebar.color_picker("Color de Letra", "#000000")
 f_size = st.sidebar.slider("Tamaño de Fuente", 12, 45, 19)
 
-# Estilo del visor (CSS MANTENIDO IGUAL, pero forzando negrita)
+# Estilo del visor (Solo negrita, sin subrayado)
 st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono&display=swap');
@@ -113,10 +115,9 @@ st.markdown(f"""
         font-family: 'JetBrains Mono', monospace !important; 
         line-height: 1.2; font-size: {f_size}px;
     }}
-    /* Asegura que los acordes en negrita se vean bien */
     .visor-musical b {{
         color: inherit;
-        text-decoration: underline;
+        font-weight: 800; /* Negrita extra fuerte */
     }}
     </style>
     """, unsafe_allow_html=True)
@@ -124,7 +125,7 @@ st.markdown(f"""
 df = cargar_datos()
 categorias = cargar_categorias()
 
-# --- LÓGICA DE MÓDULOS (MANTENIDA IGUAL) ---
+# --- MÓDULOS ---
 if menu == "🏠 Cantar / Vivo":
     st.header("🏠 Biblioteca en Vivo")
     col_f1, col_f2 = st.columns([2, 1])
@@ -160,7 +161,7 @@ elif menu == "📋 Mi Setlist":
         for i, cancion_nombre in enumerate(st.session_state.setlist):
             col_t, col_b = st.columns([4, 1])
             col_t.write(f"**{i+1}. {cancion_nombre}**")
-            if col_b.button("❌ Quitar", key=f"del_set_{i}"):
+            if col_b.button("❌", key=f"del_set_{i}"):
                 st.session_state.setlist.pop(i)
                 guardar_setlist(st.session_state.setlist)
                 st.rerun()
@@ -171,7 +172,7 @@ elif menu == "➕ Agregar Canción":
     st.header("➕ Nueva Canción")
     col1, col2, col3 = st.columns(3)
     titulo_n, autor_n, cat_n = col1.text_input("Título"), col2.text_input("Autor"), col3.selectbox("Categoría", categorias)
-    letra_n = st.text_area("Letra:", height=400)
+    letra_n = st.text_area("Letra (Asegúrate de poner los acordes con espacios dobles o en su propia línea):", height=400)
     if st.button("💾 Guardar"):
         nueva = pd.DataFrame([[titulo_n, autor_n if autor_n else "Anónimo", cat_n, letra_n]], columns=df.columns)
         df = pd.concat([df, nueva], ignore_index=True)
@@ -190,7 +191,6 @@ elif menu == "📂 Gestionar / Editar":
                 df = df.drop(i).reset_index(drop=True); guardar_datos(df); st.rerun()
 
 elif menu == "⚙️ Configurar Categorías":
-    st.header("⚙️ Categorías")
     n_cat = st.text_input("Nueva:")
     if st.button("Añadir"):
         if n_cat and n_cat not in categorias:
