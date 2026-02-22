@@ -15,20 +15,34 @@ def cargar_datos():
             df = pd.read_csv(DB_FILE)
             if not df.empty:
                 return df
-    except Exception as e:
-        st.sidebar.warning("Iniciando base de datos de canciones...")
+    except Exception:
+        pass
     return pd.DataFrame(columns=["Título", "Autor", "Categoría", "Letra"])
 
 def cargar_categorias():
-    categorias_defecto = ["General", "Alabanza", "Rock", "Pop", "Balada"]
+    # PLAN C: Lista de emergencia (si el archivo falla por completo)
+    cat_emergencia = [
+        "Alabanza", "Adoracion", "Oracion", "Espiritu Santo", "Entrega", 
+        "Sanacion", "Amor de Dios", "Perdon", "Eucaristia-Entrada", 
+        "Eucaristia-Perdon", "Eucaristia-Gloria", "Eucaristia-Aclamacion", 
+        "Eucaristia Ofertorio", "Eucaristia-Santo", "Eucaristia-Cordero", 
+        "Eucaristia-Comunion", "Ecuaristia-Final", "Eucaristia-Maria", 
+        "Adviento", "Navidad", "Cuaresma"
+    ]
     try:
-        if os.path.exists(CAT_FILE) and os.path.getsize(CAT_FILE) > 0:
-            df_cat = pd.read_csv(CAT_FILE)
-            if not df_cat.empty and 'Nombre' in df_cat.columns:
-                return df_cat['Nombre'].unique().tolist()
-    except Exception as e:
+        if os.path.exists(CAT_FILE) and os.path.getsize(CAT_FILE) > 5:
+            # PLAN A: Leer archivo CSV
+            df_cat = pd.read_csv(CAT_FILE, on_bad_lines='skip')
+            if not df_cat.empty:
+                # Intentar por nombre de columna o por posición
+                if 'Nombre' in df_cat.columns:
+                    return df_cat['Nombre'].dropna().unique().tolist()
+                else:
+                    return df_cat.iloc[:, 0].dropna().unique().tolist()
+    except Exception:
         pass
-    return categorias_defecto
+    # PLAN B: Devolver lista predefinida si falla la carga
+    return cat_emergencia
 
 def guardar_datos(df):
     df.to_csv(DB_FILE, index=False)
@@ -58,7 +72,6 @@ def transponer_texto(texto, semitonos):
 # --- INTERFAZ ---
 st.set_page_config(page_title="ChordMaster Ultra v3", page_icon="🎸", layout="wide")
 
-# CSS para Estética Escenario
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono&family=Roboto+Slab&family=Montserrat:wght@700&display=swap');
@@ -89,7 +102,6 @@ c_txt = st.sidebar.color_picker("Texto", "#00FF00")
 f_size = st.sidebar.slider("Tamaño de Letra", 18, 45, 24)
 f_family = st.sidebar.selectbox("Fuente", ["'JetBrains Mono', monospace", "'Roboto Slab', serif", "sans-serif"])
 
-# Botón Pantalla Completa
 if st.sidebar.button("📺 Pantalla Completa"):
     st.components.v1.html("<script>window.parent.document.documentElement.requestFullscreen();</script>", height=0)
 
@@ -134,14 +146,14 @@ elif menu == "📸 Importar Foto":
                     t_f = st.text_input("Título", value="Nueva Escaneada")
                     a_f = st.text_input("Autor", value="Desconocido")
                     c_f = st.selectbox("Categoría", categorias)
-                    l_f = st.text_area("Texto detectado (Añade acordes)", value=texto_ocr, height=300)
+                    l_f = st.text_area("Texto detectado", value=texto_ocr, height=300)
                     if st.form_submit_button("Confirmar Guardado"):
                         nueva = pd.DataFrame([[t_f, a_f, c_f, l_f]], columns=df.columns)
                         df = pd.concat([df, nueva], ignore_index=True)
                         guardar_datos(df)
                         st.success("¡Importado!")
-    except ImportError:
-        st.error("Instalando motor OCR... espera unos segundos.")
+    except Exception:
+        st.error("Instalando motor OCR o cámara no disponible.")
 
 elif menu == "🏠 Cantar / Vivo":
     col_busq, col_cat = st.columns([2, 1])
@@ -149,7 +161,7 @@ elif menu == "🏠 Cantar / Vivo":
     with col_cat: fil_cat = st.multiselect("🏷️ Filtrar Categoría", categorias)
 
     df_f = df.copy()
-    if busq: df_f = df_f[df_f['Título'].str.contains(busq, case=False) | df_f['Autor'].str.contains(busq, case=False)]
+    if busq: df_f = df_f[df_f['Título'].str.contains(busq, case=False, na=False) | df_f['Autor'].str.contains(busq, case=False, na=False)]
     if fil_cat: df_f = df_f[df_f['Categoría'].isin(fil_cat)]
 
     if not df_f.empty:
@@ -166,7 +178,6 @@ elif menu == "🏠 Cantar / Vivo":
         if scroll > 0:
             st.components.v1.html(f"<script>setInterval(()=>window.parent.scrollBy(0,1),{100/scroll});</script>", height=0)
 
-        # Visor Musical
         letra_f = transponer_texto(c_data['Letra'], transp)
         st.markdown(f"""
             <div class="visor-musical" style="background:{c_bg}; color:{c_txt}; font-size:{f_size}px; font-family:{f_family};">
@@ -177,7 +188,7 @@ elif menu == "🏠 Cantar / Vivo":
             </div>
         """, unsafe_allow_html=True)
     else:
-        st.info("No hay canciones disponibles. ¡Agrega una!")
+        st.info("No hay canciones disponibles o no coinciden con la búsqueda.")
 
 elif menu == "📋 Mi Setlist":
     st.header("📋 Mi Setlist")
