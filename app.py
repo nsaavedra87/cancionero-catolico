@@ -36,7 +36,7 @@ def guardar_datos(df): df.to_csv(DB_FILE, index=False)
 def guardar_categorias(lista_cat): pd.DataFrame(lista_cat, columns=["Nombre"]).to_csv(CAT_FILE, index=False)
 def guardar_setlist(lista_sl): pd.DataFrame(lista_sl, columns=["Título"]).to_csv(SETLIST_FILE, index=False)
 
-# --- LÓGICA DE PROCESAMIENTO MUSICAL ---
+# --- LÓGICA DE PROCESAMIENTO ---
 NOTAS_LAT = ["Do", "Do#", "Re", "Re#", "Mi", "Fa", "Fa#", "Sol", "Sol#", "La", "La#", "Si"]
 NOTAS_AMER = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
@@ -75,22 +75,42 @@ def procesar_texto_final(texto, semitonos):
         lineas_finales.append(procesada.replace(" ", "&nbsp;"))
     return "<br>".join(lineas_finales)
 
-# --- INTERFAZ STREAMLIT ---
+# --- INTERFAZ ---
 st.set_page_config(page_title="ChordMaster Pro", layout="wide")
 if 'setlist' not in st.session_state: st.session_state.setlist = cargar_setlist()
 
 # Sidebar
 st.sidebar.title("🎸 ChordMaster")
 menu = st.sidebar.selectbox("Menú:", ["🏠 Cantar / Vivo", "📋 Mi Setlist", "➕ Agregar Canción", "📂 Gestionar / Editar", "⚙️ Categorías"])
-st.sidebar.markdown("---")
 c_bg = st.sidebar.color_picker("Fondo Visor", "#FFFFFF")
 c_txt = st.sidebar.color_picker("Color Letra", "#000000")
-f_size = st.sidebar.slider("Tamaño Fuente", 12, 45, 19)
+f_size = st.sidebar.slider("Tamaño Fuente", 12, 45, 18)
 
+# CSS CLAVE PARA EL "ESPEJO"
+# Forzamos la misma fuente tanto en el editor como en el visor
 st.markdown(f"""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono&display=swap');
-    .visor-musical {{ background-color: {c_bg} !important; color: {c_txt} !important; border-radius: 12px; padding: 25px; border: 1px solid #ddd; font-family: 'JetBrains Mono', monospace !important; line-height: 1.4; font-size: {f_size}px; }}
+    /* Fuente idéntica para editor y visor */
+    @import url('https://fonts.googleapis.com/css2?family=Courier+Prime&display=swap');
+    
+    .visor-musical, textarea {{ 
+        font-family: 'Courier Prime', monospace !important; 
+    }}
+    
+    .visor-musical {{ 
+        background-color: {c_bg} !important; 
+        color: {c_txt} !important; 
+        border-radius: 12px; padding: 25px; border: 1px solid #ddd; 
+        line-height: 1.2 !important; 
+        font-size: {f_size}px !important;
+    }}
+    
+    /* Forzar al editor de Streamlit a usar la misma fuente */
+    .stTextArea textarea {{
+        font-size: {f_size}px !important;
+        line-height: 1.2 !important;
+    }}
+
     .visor-musical b {{ font-weight: 900 !important; color: inherit; white-space: nowrap; }}
     </style>
     """, unsafe_allow_html=True)
@@ -129,32 +149,26 @@ elif menu == "📋 Mi Setlist":
         st.info("No hay canciones en el setlist.")
     else:
         for i, t in enumerate(st.session_state.setlist):
-            # Usamos un expander para permitir el acceso a la canción
             with st.expander(f"🎵 {i+1}. {t}"):
-                # Buscar datos de la canción
                 cancion_data = df[df['Título'] == t]
                 if not cancion_data.empty:
                     data = cancion_data.iloc[0]
                     col_info, col_del = st.columns([4, 1])
                     col_info.write(f"**Autor:** {data['Autor']} | **Categoría:** {data['Categoría']}")
                     
-                    if col_del.button("🗑️ Quitar del Setlist", key=f"del_sl_{i}"):
+                    if col_del.button("🗑️ Quitar", key=f"del_sl_{i}"):
                         st.session_state.setlist.pop(i)
                         guardar_setlist(st.session_state.setlist); st.rerun()
                     
                     tp_sl = st.number_input("Transportar", -6, 6, 0, key=f"tp_sl_{i}")
                     html_sl = procesar_texto_final(data['Letra'], tp_sl)
                     st.markdown(f'<div class="visor-musical">{html_sl}</div>', unsafe_allow_html=True)
-                else:
-                    st.error("Canción no encontrada en la base de datos.")
-                    if st.button("Eliminar del setlist", key=f"err_{i}"):
-                        st.session_state.setlist.pop(i)
-                        guardar_setlist(st.session_state.setlist); st.rerun()
 
 elif menu == "➕ Agregar Canción":
     st.header("➕ Nueva Canción")
     c1, c2, c3 = st.columns(3)
     t_n, a_n, cat_n = c1.text_input("Título"), c2.text_input("Autor"), c3.selectbox("Categoría", categorias)
+    # El editor ahora usa la misma fuente que el visor
     l_n = st.text_area("Letra y Acordes:", height=250)
     if l_n:
         st.subheader("👀 Vista Previa")
@@ -188,4 +202,3 @@ elif menu == "⚙️ Categorías":
     if st.button("Añadir"):
         if n_cat and n_cat not in categorias:
             categorias.append(n_cat); guardar_categorias(categorias); st.rerun()
-
