@@ -2,215 +2,147 @@ import streamlit as st
 import pandas as pd
 import os
 import re
-from PIL import Image
 
-# --- CONFIGURACIÓN DE ARCHIVOS ---
+# --- CONFIGURACIÓN Y DICCIONARIO DE PIANO ---
 DB_FILE = "cancionero.csv"
 CAT_FILE = "categorias.csv"
 
-# --- FUNCIONES DE DATOS ---
-def cargar_datos():
-    try:
-        if os.path.exists(DB_FILE) and os.path.getsize(DB_FILE) > 0:
-            return pd.read_csv(DB_FILE)
-    except Exception: pass
-    return pd.DataFrame(columns=["Título", "Autor", "Categoría", "Letra"])
+# Diccionario de digitación (Notas que componen cada acorde)
+PIANO_DICT = {
+    "C": "Do - Mi - Sol", "Cm": "Do - Mib - Sol", "C7": "Do - Mi - Sol - Sib",
+    "C#": "Do# - Fa - Sol#", "C#m": "Do# - Mi - Sol#", "Db": "Reb - Fa - Lab",
+    "D": "Re - Fa# - La", "Dm": "Re - Fa - La", "D7": "Re - Fa# - La - Do",
+    "D#": "Re# - Sol - La#", "Eb": "Mib - Sol - Sib", "Ebm": "Mib - Solb - Sib",
+    "E": "Mi - Sol# - Si", "Em": "Mi - Sol - Si", "E7": "Mi - Sol# - Si - Re",
+    "F": "Fa - La - Do", "Fm": "Fa - Lab - Do", "F7": "Fa - La - Do - Mib",
+    "F#": "Fa# - La# - Do#", "F#m": "Fa# - La - Do#", "Gb": "Solb - Sib - Reb",
+    "G": "Sol - Si - Re", "Gm": "Sol - Sib - Re", "G7": "Sol - Si - Re - Fa",
+    "G#": "Sol# - Do - Re#", "Ab": "Lab - Do - Mib", "Abm": "Lab - Dob - Mib",
+    "A": "La - Do# - Mi", "Am": "La - Do - Mi", "A7": "La - Do# - Mi - Sol",
+    "A#": "La# - Re - Fa#", "Bb": "Sib - Re - Fa", "Bbm": "Sib - Reb - Fa",
+    "B": "Si - Re# - Fa#", "Bm": "Si - Re - Fa#", "B7": "Si - Re# - Fa# - La"
+}
 
-def cargar_categorias():
-    cat_emergencia = ["Alabanza", "Adoracion", "Oracion", "Espiritu Santo", "Entrega", "Sanacion", "Amor de Dios", "Perdon", "Eucaristia-Entrada", "Eucaristia-Perdon", "Eucaristia-Gloria", "Eucaristia-Aclamacion", "Eucaristia Ofertorio", "Eucaristia-Santo", "Eucaristia-Cordero", "Eucaristia-Comunion", "Ecuaristia-Final", "Eucaristia-Maria", "Adviento", "Navidad", "Cuaresma"]
-    try:
-        if os.path.exists(CAT_FILE) and os.path.getsize(CAT_FILE) > 5:
-            df_cat = pd.read_csv(CAT_FILE)
-            return df_cat.iloc[:, 0].dropna().unique().tolist()
-    except Exception: pass
-    return cat_emergencia
+NOTAS_BASE = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+def cargar_datos():
+    if os.path.exists(DB_FILE) and os.path.getsize(DB_FILE) > 0:
+        return pd.read_csv(DB_FILE)
+    return pd.DataFrame(columns=["Título", "Autor", "Categoría", "Letra"])
 
 def guardar_datos(df):
     df.to_csv(DB_FILE, index=False)
 
-# --- LÓGICA DE PROCESAMIENTO VISUAL ---
-NOTAS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-
-def procesar_texto(texto, semitonos, color_acorde):
-    if not texto: return ""
-    # Patrón para detectar acordes (C, Dm, G7, etc.)
-    patron = r"\b([A-G][#b]?(m|maj|7|9|sus\d|dim|aug|add\d)?)\b"
-    
-    def reemplazar(match):
-        acorde = match.group(1)
-        match_nota = re.match(r"([A-G][#b]?)", acorde)
-        nota_original = match_nota.group(1)
-        dic_bemoles = {"Db": "C#", "Eb": "D#", "Gb": "F#", "Ab": "G#", "Bb": "A#"}
-        nota_base = dic_bemoles.get(nota_original, nota_original)
-        
-        if nota_base in NOTAS and semitonos != 0:
-            nueva_nota = NOTAS[(NOTAS.index(nota_base) + semitonos) % 12]
-            acorde = nueva_nota + acorde[len(nota_original):]
-        
-        return f'<span style="color:{color_acorde}; font-weight:bold;">{acorde}</span>'
-    
-    return re.sub(patron, reemplazar, texto)
-
-def limpiar_texto(t):
-    # Elimina caracteres extraños, deja solo letras, números, acordes y puntuación básica
-    t = re.sub(r'[^\w\s#+m7áéíóúÁÉÍÓÚñÑ.,\-()|/]', '', t)
-    # Reduce espacios múltiples a uno solo
-    t = re.sub(r' +', ' ', t)
-    return t.strip()
+def renderizar_cifrado(texto_marcado, color_acorde):
+    if not texto_marcado: return ""
+    lineas = texto_marcado.split('\n')
+    resultado_html = ""
+    for linea in lineas:
+        if "[" in linea:
+            partes = re.split(r'(\[[^\]]+\])', linea)
+            linea_acordes = ""
+            linea_letra = ""
+            for parte in partes:
+                if parte.startswith("[") and parte.endswith("]"):
+                    acorde = parte[1:-1]
+                    linea_acordes += f'<span style="color:{color_acorde}; font-weight:bold;">{acorde}</span>'
+                else:
+                    linea_letra += parte
+                    linea_acordes += "&nbsp;" * len(parte)
+            resultado_html += f'<div style="margin-bottom:12px;"><div style="white-space:pre; line-height:1;">{linea_acordes}</div><div style="white-space:pre; line-height:1;">{linea_letra}</div></div>'
+        else:
+            resultado_html += f'<div style="white-space:pre; margin-bottom:12px;">{linea}</div>'
+    return resultado_html
 
 # --- INTERFAZ ---
-st.set_page_config(page_title="ChordMaster Pro", page_icon="🎸", layout="wide")
+st.set_page_config(page_title="ChordMaster Piano Edition", layout="wide")
 
-# CSS para Editor y Visor
-st.markdown(f"""
+# JS para insertar acorde en el cursor
+st.markdown("""
+    <script>
+    function insertarAcorde(acorde) {
+        const textArea = window.parent.document.querySelector('textarea');
+        if (!textArea) return;
+        const start = textArea.selectionStart;
+        const end = textArea.selectionEnd;
+        const text = textArea.value;
+        textArea.value = text.substring(0, start) + "[" + acorde + "]" + text.substring(end);
+        textArea.selectionStart = textArea.selectionEnd = start + acorde.length + 2;
+        textArea.focus();
+        textArea.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    </script>
+    """, unsafe_allow_html=True)
+
+st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono&family=Montserrat:wght@700&display=swap');
-    [data-testid="stHeader"] {{ visibility: hidden; }}
-    
-    /* Forzar al editor de texto a usar fuente monoespaciada para que coincida con el visor */
-    textarea {{
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 16px !important;
-    }}
-    
-    .visor-musical {{
-        border-radius: 12px;
-        padding: 15px 25px;
-        box-shadow: 0px 4px 15px rgba(0,0,0,0.3);
-        border: 1px solid #444;
-        white-space: pre; /* Mantiene espacios exactos */
-        line-height: 1.2;
-        overflow-x: auto;
-    }}
-    .titulo-visor {{ font-family: 'Montserrat', sans-serif; margin-bottom: 0px; line-height: 1.0; font-size: 1.5em; }}
-    .autor-visor {{ color: #777; margin-bottom: 5px; font-size: 0.85em; }}
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono&display=swap');
+    .stTextArea textarea { font-family: 'JetBrains Mono', monospace !important; }
+    .visor-final { background: #121212; padding: 25px; border-radius: 15px; border: 1px solid #333; }
+    /* Estilo para los botones de acordes con ayuda */
+    .stButton>button { width: 100%; border-radius: 5px; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
 df = cargar_datos()
-categorias = cargar_categorias()
 
-# --- SIDEBAR ---
-st.sidebar.title("🎸 Menú")
-menu = st.sidebar.selectbox("Ir a:", ["🏠 Cantar / Vivo", "➕ Agregar Canción", "📂 Gestionar Biblioteca", "⚙️ Categorías", "📋 Setlist"])
+# --- PANEL DE EDICIÓN ---
+menu = st.sidebar.selectbox("Menú", ["🏠 Cantar", "➕ Editor Pro", "⚙️ Categorías"])
+c_chord = st.sidebar.color_picker("Color Acordes", "#00E676")
+f_size = st.sidebar.slider("Tamaño Fuente", 15, 45, 22)
 
-st.sidebar.divider()
-st.sidebar.subheader("🎨 Ajustes de Vista")
-c_bg = st.sidebar.color_picker("Fondo", "#121212")
-c_txt = st.sidebar.color_picker("Letras", "#FFFFFF")
-c_chord = st.sidebar.color_picker("Acordes", "#FFD700")
-f_size = st.sidebar.slider("Tamaño Letra", 12, 40, 20)
-f_family = "'JetBrains Mono', monospace" # Forzado para alineación
-
-# --- MÓDULO: AGREGAR CANCIÓN ---
-if menu == "➕ Agregar Canción":
-    st.header("➕ Nueva Canción")
+if menu == "➕ Editor Pro":
+    st.header("🎹 Editor Musical con Guía de Piano")
     
-    metodo = st.radio("Origen:", ["Manual / Copiar Texto", "Escanear Foto (OCR)"], horizontal=True)
+    col_ed, col_pre = st.columns([1, 1])
     
-    if 'texto_temp' not in st.session_state: st.session_state.texto_temp = ""
-
-    if metodo == "Escanear Foto (OCR)":
-        img_file = st.camera_input("Capturar")
-        if img_file:
-            import pytesseract
-            img = Image.open(img_file)
-            with st.spinner("Leyendo..."):
-                st.session_state.texto_temp = pytesseract.image_to_string(img, lang='spa')
-
-    st.divider()
-    
-    col_input1, col_input2 = st.columns(2)
-    titulo_n = col_input1.text_input("Título")
-    autor_n = col_input2.text_input("Autor")
-    cat_n = st.selectbox("Categoría", categorias)
-    
-    # Editor Monoespaciado
-    letra_n = st.text_area("Editor (Usa espacios para alinear acordes sobre las letras):", 
-                           value=st.session_state.texto_temp, 
-                           height=350)
-    
-    col_btn1, col_btn2 = st.columns(2)
-    if col_btn1.button("✨ Limpiar Texto (Quitar basura)"):
-        st.session_state.texto_temp = limpiar_texto(letra_n)
-        st.rerun()
-
-    # Vista Previa Dinámica
-    if letra_n:
-        st.subheader("👀 Vista Previa (Alineación Real)")
-        preview_html = procesar_texto(letra_n, 0, c_chord)
-        st.markdown(f"""
-            <div class="visor-musical" style="background:{c_bg}; color:{c_txt}; font-size:{f_size}px; font-family:{f_family};">
-                <div class="titulo-visor" style="color:white;">{titulo_n if titulo_n else 'Título'}</div>
-                <div class="autor-visor">{autor_n if autor_n else 'Autor'} | {cat_n}</div>
-                <hr style="margin: 5px 0; border-color: #333;">
-                {preview_html}
-            </div>
-        """, unsafe_allow_html=True)
-
-        if st.button("💾 GUARDAR EN BIBLIOTECA", use_container_width=True):
-            if titulo_n and letra_n:
-                nueva_fila = pd.DataFrame([[titulo_n, autor_n, cat_n, letra_n]], columns=df.columns)
-                df = pd.concat([df, nueva_fila], ignore_index=True)
-                guardar_datos(df)
-                st.success("¡Canción guardada!")
-                st.session_state.texto_temp = ""
-            else: st.error("Falta título o letra.")
-
-# --- MÓDULO: CANTAR ---
-elif menu == "🏠 Cantar / Vivo":
-    col_f1, col_f2 = st.columns([2, 1])
-    with col_f1: b = st.text_input("🔍 Buscar...")
-    with col_f2: f_cat = st.multiselect("🏷️ Categoría", categorias)
-
-    df_v = df.copy()
-    if b: df_v = df_v[df_v['Título'].str.contains(b, case=False, na=False) | df_v['Autor'].str.contains(b, case=False, na=False)]
-    if f_cat: df_v = df_v[df_v['Categoría'].isin(f_cat)]
-
-    if not df_v.empty:
-        sel_c = st.selectbox("Selecciona:", df_v['Título'])
-        data_c = df_v[df_v['Título'] == sel_c].iloc[0]
+    with col_ed:
+        titulo = st.text_input("Título de la canción")
         
-        col_c1, col_c2, col_c3 = st.columns(3)
-        tp = col_c1.number_input("Transportar", -6, 6, 0)
-        sc = col_c2.slider("Auto-Scroll", 0, 10, 0)
-        if col_c3.button("⭐ Setlist"):
-            st.session_state.setlist.append(sel_c); st.toast("Añadida")
+        # --- TECLADO DE ACORDES COMPLETO ---
+        st.write("### 🎹 Teclado de Acordes")
+        st.caption("Pasa el mouse sobre el acorde para ver las notas del piano.")
+        
+        tab_may, tab_min, tab_7 = st.tabs(["Mayores", "Menores", "Séptimas"])
+        
+        with tab_may:
+            cols = st.columns(6)
+            for i, nota in enumerate(NOTAS_BASE):
+                info = PIANO_DICT.get(nota, "Desconocido")
+                if cols[i % 6].button(nota, help=f"Piano: {info}", key=f"m_{nota}"):
+                    st.components.v1.html(f"<script>insertarAcorde('{nota}');</script>", height=0)
+        
+        with tab_min:
+            cols = st.columns(6)
+            for i, nota in enumerate(NOTAS_BASE):
+                nm = f"{nota}m"
+                info = PIANO_DICT.get(nm, "Desconocido")
+                if cols[i % 6].button(nm, help=f"Piano: {info}", key=f"min_{nota}"):
+                    st.components.v1.html(f"<script>insertarAcorde('{nm}');</script>", height=0)
 
-        if sc > 0:
-            st.components.v1.html(f"<script>setInterval(()=>window.parent.scrollBy(0,1),{100/sc});</script>", height=0)
+        with tab_7:
+            cols = st.columns(6)
+            for i, nota in enumerate(NOTAS_BASE):
+                n7 = f"{nota}7"
+                info = PIANO_DICT.get(n7, "Desconocido")
+                if cols[i % 6].button(n7, help=f"Piano: {info}", key=f"7_{nota}"):
+                    st.components.v1.html(f"<script>insertarAcorde('{n7}');</script>", height=0)
 
-        l_html = procesar_texto(data_c['Letra'], tp, c_chord)
-        st.markdown(f"""
-            <div class="visor-musical" style="background:{c_bg}; color:{c_txt}; font-size:{f_size}px; font-family:{f_family};">
-                <div class="titulo-visor" style="color:white;">{data_c['Título']}</div>
-                <div class="autor-visor">{data_c['Autor']} | {data_c['Categoría']}</div>
-                {l_html}
-            </div>
-        """, unsafe_allow_html=True)
+        letra_input = st.text_area("Letra (Toca una palabra y luego un acorde arriba):", height=350)
 
-# --- GESTIONAR ---
-elif menu == "📂 Gestionar Biblioteca":
-    st.header("📂 Gestionar")
-    for i, row in df.iterrows():
-        with st.expander(f"{row['Título']}"):
-            if st.button(f"Eliminar definitivamente", key=f"del_{i}"):
-                df = df.drop(i).reset_index(drop=True)
+    with col_pre:
+        st.subheader("👀 Vista Previa")
+        if letra_input:
+            html = renderizar_cifrado(letra_input, c_chord)
+            st.markdown(f'<div class="visor-final" style="font-size:{f_size}px; font-family:\'JetBrains Mono\', monospace; color:white;">{html}</div>', unsafe_allow_html=True)
+            if st.button("💾 Guardar Canción", use_container_width=True):
+                nueva = pd.DataFrame([[titulo, "Autor", "General", letra_input]], columns=df.columns)
+                df = pd.concat([df, nueva], ignore_index=True)
                 guardar_datos(df)
-                st.rerun()
+                st.success("¡Guardada!")
 
-# --- CATEGORÍAS ---
-elif menu == "⚙️ Categorías":
-    st.header("⚙️ Categorías")
-    n_cat = st.text_input("Nueva:")
-    if st.button("Añadir"):
-        if n_cat and n_cat not in categorias:
-            categorias.append(n_cat)
-            pd.DataFrame(categorias, columns=['Nombre']).to_csv(CAT_FILE, index=False)
-            st.rerun()
-    st.write(categorias)
-
-elif menu == "📋 Setlist":
-    st.header("📋 Setlist")
-    for s in st.session_state.setlist: st.write(f"• {s}")
-    if st.button("Limpiar"): st.session_state.setlist = []; st.rerun()
+elif menu == "🏠 Cantar":
+    if not df.empty:
+        sel = st.selectbox("Canción:", df['Título'])
+        c = df[df['Título'] == sel].iloc[0]
+        st.markdown(f'<div class="visor-final" style="font-size:{f_size}px; font-family:\'JetBrains Mono\', monospace; color:white;">{renderizar_cifrado(c["Letra"], c_chord)}</div>', unsafe_allow_html=True)
